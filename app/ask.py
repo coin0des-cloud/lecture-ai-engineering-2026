@@ -45,6 +45,11 @@ MAX_RETRIES = 3
 RETRYABLE_CODES = (429, 500, 503)
 BACKOFF_BASE_SEC = 5.0  # 待機 = BASE * 2**retries
 
+CHAT_INFO = {
+    "play": False,
+    "model": None,
+    "contents": [],
+}
 
 @dataclass
 class Row:
@@ -80,6 +85,11 @@ def measure(client, model, question, q_idx, repeat, before_attempt, sleep):
             return Row(False, model, q_idx, repeat, None, None, None, None, None, "", retries, type(e).__name)
 
         elapsed = time.perf_counter() - t0
+
+        if CHAT_INFO["play"] and CHAT_INFO["model"] == None:
+            CHAT_INFO["model"] = model
+            CHAT_INFO["contents"].append({"role": "user", "parts": [{"text": question}]})
+            CHAT_INFO["contents"].append({"role": "model", "parts": [{"text": resp.text}]})
 
         usage = resp.usage_metadata
         cand = resp.candidates[0] if resp.candidates else None
@@ -223,12 +233,13 @@ def print_rate_limit_report(rows, wall_sec, models) -> None:
         if not (rpm or tpm or rpd):
             print("  RATE_LIMITS 未設定: AI Studio の値を入れると上限との比較を表示します")
 
-
-def ask_and_report(questions: list[str], repeats: int, warmup: bool) -> None:
-    client = genai.Client(api_key=get_api_key())
-    rows, wall = run_benchmark(client, MODELS, questions, repeats, PACE_RPM, warmup)
+def report(rows, wall, questions):
     print_summary(rows, wall, MODELS, questions)
     print_rate_limit_report(rows, wall, MODELS)
+
+
+def ask_benchmark(client, questions: list[str], repeats: int, warmup: bool) -> None:
+    return run_benchmark(client, MODELS, questions, repeats, PACE_RPM, warmup)
 
 
 def ask(question: str) -> str:
@@ -251,6 +262,8 @@ def main() -> None:
     parser.add_argument("--no-warmup", action="store_false", dest="warmup", help="ウォームアップを行わない")
     parser.add_argument("--warmup", action="store_true", help="ウォームアップを行う（最初に1回だけ実行し接続確立などの初回コストを除外する）")
     parser.add_argument("--repeat", type=int, dest="repeats", default=DEFAULT_REPEATS, help="同じ(モデル, 質問)の反復回数。中央値を取るため 3 以上を推奨")
+    parser.add_argument("--no-report", action="store_true", help="レポートを表示しない")
+    parser.add_argument("--chat", action="store_true", help="チャットモードで質問する")
     parser.add_argument("questions", nargs="*", default=DEFAULT_QUESTIONS)
     args = parser.parse_args()
 
@@ -258,16 +271,24 @@ def main() -> None:
         dry_run(args.questions, args.warmup, args.repeats)
         return
 
-    ask_and_report(args.questions, args.repeats, args.warmup)
+    if args.chat:
+        CHAT_INFO["play"] = True
 
-    #print(f"[model] {MODEL}")
-    #print(f"[質問] {args.question}\n")
-    #try:
-    #    print(ask(args.question))
-    #except errors.APIError as e:
-    #    print(api_error_message(e.code, e.message))
-    #    raise SystemExit(1)
+    client = genai.Client(api_key=get_api_key())
+    rows, wall = ask_benchmark(client, args.questions, args.repeats, args.warmup)
+    if not args.no_report:
+        report(rows, wall, args.questions)
 
+    if args.chat:
+        print("\n\n会話を続けます。\n")
+        while True:
+            question = input("質問を入力してください（終了するには空でEnter）: ")
+            if not question.strip():
+                break
+            CHAT_INFO["contents"].append({"role": "user", "parts": [{"text": question}]})
+            response = client.models.generate_content(model=CHAT_INFO["model"], contents=CHAT_INFO["contents"])
+            print(f"{CHAT_INFO["model"]}: {response.text}\n")
+            CHAT_INFO["contents"].append({"role": "model", "parts": [{"text": response.text}]})
 
 if __name__ == "__main__":
     main()
