@@ -28,22 +28,31 @@ git switch -c lec03 lec03-start
 ### 1. 第1回と同じ質問をエージェントに投げる
 
 ```bash
-uv run python -m app.agent "AIE2026の講座で使う「lecNN-start タグ」とは何ですか？"
+uv run adk run app "AIE2026の講座で使う「lecNN-start タグ」とは何ですか？"
 ```
 
 第1回の `app.ask` の回答と比べてみましょう。
 
 ### 2. ツール呼び出しを読む
 
+ADK CLI で実行する場合：
+
+```bash
+uv run adk run app "LoRAとQLoRAの違いは？"
+```
+
+ツール呼び出しの詳細なトレースを表示する場合は、補助CLIも使えます：
+
 ```bash
 uv run python -m app.agent --trace "LoRAとQLoRAの違いは？"
 ```
 
-`[tool call]` の行で、モデルがどのツールをどんな引数で呼んだかを確認します。`[usage]` の `requests` は、1つの質問で LLM を何回呼んだかを表します。
+`[tool call]` の行で、モデルがどのツールをどんな引数で呼んだかを確認します。`[usage]` にはGemini APIのトークン使用量が表示されます。
+このエージェントは Google ADK で実装されています。ブラウザーの画面で試す場合は `uv run adk web` を実行し、`app` エージェントを選びます。
 
 ### 3. ツールを1つ追加する
 
-`app/tools.py` に `make_quiz` を追加し、`app/agent.py` の `TODO(第3回 演習)` の場所で登録します。
+`app/tools.py` に `make_quiz` を追加し、`app/agent.py` の `build_agent()` が作るツール一覧に登録します。
 
 - 例：指定した回（`lecture: int`）の用語から1つを選び、「この用語の意味は？」という問題と答えを返す
 - docstring には「いつ、何のために使うツールか」を書く（モデルはこれを読んで使うかどうかを決める）
@@ -62,8 +71,8 @@ uv run pytest -q
 | レベル | 内容 |
 |---|---|
 | 基礎 | `INSTRUCTIONS` やツールの docstring を書き換え、ツールの呼ばれ方や回答がどう変わるかを `--trace` で比べて記録する |
-| 実装 | 学習の記録を `learning_log/` に保存する `save_learning_log` ツールを作る。保存の前に利用者の確認を挟む（Pydantic AI の `requires_approval=True`）。TestModel を使ったテストも書く |
-| 発展 | 次のどちらか。(a) 同じエージェントを Google の ADK で作り直し、書き方や `adk web` での見え方を比較する。(b) 講義で紹介した Pi を Codespaces 上で動かし、公開されている Pi のシステムプロンプトと自分のエージェントの `INSTRUCTIONS` を比較する |
+| 実装 | 学習の記録を `learning_log/` に保存する `save_learning_log` ツールを作る。保存の前にADKの確認・承認の仕組みを調べて組み込む。APIを呼ばないテストも書く |
+| 発展 | 次のどちらか。(a) Pydantic AI など別のフレームワークで同じエージェントを作り直し、Google ADKとの書き方や画面表示を比較する（必要な依存パッケージは別途導入する）。(b) 講義で紹介した Pi を Codespaces 上で動かし、公開されている Pi のシステムプロンプトと自分のエージェントの `INSTRUCTIONS` を比較する |
 
 ### 発展（b）の進め方
 

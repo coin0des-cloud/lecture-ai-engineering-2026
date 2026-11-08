@@ -47,7 +47,7 @@ def test_make_quiz_selects_a_term_from_the_requested_lecture(monkeypatch):
     quiz = json.loads(tools.make_quiz(2))
 
     assert quiz == {
-        "問題": f'この用語の意味は？「{selected["term"]}」',
+        "問題": f'「{selected["term"]}」この用語の意味は？',
         "答え": selected["definition"],
     }
 

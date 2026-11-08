@@ -62,7 +62,7 @@
       "aliases": ["指示文", "instructions", "system instruction"],
       "lecture": 1,
       "category": "LLM基礎",
-      "definition": "利用者の質問とは別に、モデルの振る舞い（役割、口調、守るべきルールなど）を指定する入力。Pydantic AIでは Agent の instructions 引数で与える。",
+      "definition": "利用者の質問とは別に、モデルの振る舞い（役割、口調、守るべきルールなど）を指定する入力。Pydantic AIでは Agent の instructions、Google ADKでは instruction 引数で与える。",
       "related": ["prompt", "guardrail"]
     },
     {
@@ -341,7 +341,7 @@
       "aliases": ["docstring", "ツールスキーマ", "tool schema"],
       "lecture": 3,
       "category": "エージェント",
-      "definition": "ツールの用途や引数の意味をモデルに伝える文章。Pydantic AIでは関数のdocstringと型ヒントから自動で作られる。モデルはこれを読んでツールを使うか、どの引数で呼ぶかを決めるので、書き方次第で挙動が大きく変わる。",
+      "definition": "ツールの用途や引数の意味をモデルに伝える文章。Google ADKでは関数のdocstringと型ヒントから自動で作られる。モデルはこれを読んでツールを使うか、どの引数で呼ぶかを決めるので、書き方次第で挙動が大きく変わる。",
       "related": ["tool", "pydantic-ai"]
     },
     {
@@ -485,7 +485,7 @@
       "aliases": ["MCP client", "MCPホスト"],
       "lecture": 5,
       "category": "MCP",
-      "definition": "MCPサーバーに接続し、公開されたツールをモデルに渡して、モデルの指示でツールを呼び出す側。エージェントのプログラム（Pydantic AIの MCPToolset）や、Copilot Chat・Claude Desktop・Cursorなどのエディタやアプリがクライアントになる。同じサーバーをどのクライアントからも使えるのがMCPの利点。",
+      "definition": "MCPサーバーに接続し、公開されたツールをモデルに渡して、モデルの指示でツールを呼び出す側。エージェントのプログラム（Google ADKの McpToolset など）や、Copilot Chat・Claude Desktop・Cursorなどのエディタやアプリがクライアントになる。同じサーバーをどのクライアントからも使えるのがMCPの利点。",
       "related": ["mcp", "mcp-server", "mcp-config"]
     },
     {
@@ -503,7 +503,7 @@
       "aliases": ["mcpServers", "MCPの設定ファイル", "mcp_servers.json", "mcp.json"],
       "lecture": 5,
       "category": "MCP",
-      "definition": "使うMCPサーバーを列挙する設定ファイル。サーバーごとに名前と、起動コマンド（stdio）または接続先URL（HTTP）を書く。Claude Desktop、Cursor、Pydantic AIなどが同じ mcpServers 形式を読む（VS Code / Copilot Chatは servers 形式）。本講座では app/mcp_servers.json。設定を数行足すだけでツールが増えるのがMCPの体験の核心。",
+      "definition": "使うMCPサーバーを列挙する設定ファイル。サーバーごとに名前と、起動コマンド（stdio）または接続先URL（HTTP）を書く。Claude Desktop、Cursor、Google ADKなどが同じ mcpServers 形式を読む（VS Code / Copilot Chatは servers 形式）。本講座では app/mcp_servers.json。設定を数行足すだけでツールが増えるのがMCPの体験の核心。",
       "related": ["mcp-client", "tool-namespace"]
     },
     {
@@ -512,7 +512,7 @@
       "aliases": ["ツール名のプレフィックス", "prefix", "名前の衝突"],
       "lecture": 5,
       "category": "MCP",
-      "definition": "複数のMCPサーバーを使うとき、同じ名前のツールを区別するために「サーバー名_ツール名」のように接頭辞を付けること。本講座の app/agent.py は設定ファイルのサーバー名を自動で付ける（例: glossary_search_glossary。Pydantic AIの load_mcp_toolsets も同じ）。ツールが増えるほどモデルに渡す説明文も増え、呼び分けの精度とトークン数に影響する。",
+      "definition": "複数のMCPサーバーを使うとき、同じ名前のツールを区別するために「サーバー名_ツール名」のように接頭辞を付けること。本講座の app/agent.py は設定ファイルのサーバー名を自動で付ける（例: glossary_search_glossary）。Google ADKでは McpToolset の tool_name_prefix を使う。ツールが増えるほどモデルに渡す説明文も増え、呼び分けの精度とトークン数に影響する。",
       "related": ["mcp-config", "tool-description", "rate-limit"]
     },
     {

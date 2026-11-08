@@ -1,29 +1,36 @@
-"""第3回: Pydantic AI で作る学習支援エージェント。
+"""Google ADK で作る学習支援エージェント。
 
 使い方:
+    uv run adk run app "AIE2026の講座で使う「lecNN-start タグ」とは何ですか？"
     uv run python -m app.agent "AIE2026の講座で使う「lecNN-start タグ」とは何ですか？"
-    uv run python -m app.agent --trace "LoRAとQLoRAの違いは？"   # ツール呼び出しを表示
-    uv run python -m app.agent --mcp --trace "LoRAとは？"        # 第5回: ツールを MCP サーバーから受け取る
-    uv run python -m app.agent --mcp --list-tools               # 第5回: モデルに見えるツール一覧（APIキー不要）
+    uv run python -m app.agent --trace "LoRAとQLoRAの違いは？"
+    uv run python -m app.agent --mcp --trace "LoRAとは？"
+    uv run adk web
 
-エージェント = モデル + ループ + ツール。
-モデルは tools.py の関数を「ツール」として呼び出し、その結果を見て回答を作る。
-第5回では、同じツールを MCP サーバー（app/mcp_server.py）経由で受け取る。
+ADK Web から読み込めるよう、root_agent を公開する。
 """
 
 import argparse
+import asyncio
 import inspect
 import json
+import os
 from pathlib import Path
+from typing import Callable
 
-from pydantic_ai import Agent
-from pydantic_ai.exceptions import ModelHTTPError
-from fastmcp import Client
-from pydantic_ai.mcp import MCPToolset, StdioTransport
-from pydantic_ai.messages import ToolCallPart, ToolReturnPart
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.test import TestModel
-from pydantic_ai.providers.google import GoogleProvider
+from google.adk.agents import Agent
+from google.adk.events import Event
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.adk.tools.base_toolset import BaseToolset
+from google.adk.tools.mcp_tool import (
+    McpToolset,
+    StdioConnectionParams,
+    StreamableHTTPConnectionParams,
+)
+from google.genai import types
+from google.genai.errors import ClientError, ServerError
+from mcp import StdioServerParameters
 
 from app import tools
 from app.config import MODEL, api_error_message, get_api_key
@@ -37,105 +44,194 @@ INSTRUCTIONS = """\
 - 宿題の答えそのものは書かず、考え方のヒントで導く。
 """
 
-# モデルは実行時に渡す（テストではAPIを呼ばない TestModel に差し替えるため）
-agent = Agent(instructions=INSTRUCTIONS)
-agent.tool_plain(tools.search_glossary)
-agent.tool_plain(tools.get_lecture_summary)
-
-# TODO(第3回 演習): tools.py に make_quiz を作り、ここで登録しよう
-agent.tool_plain(tools.make_quiz)
-
-# 第5回: 使う MCP サーバーの設定ファイル。Claude Desktop や Cursor と同じ "mcpServers" 形式
+APP_NAME = "aie2026"
+USER_ID = "student"
 MCP_CONFIG = Path(__file__).resolve().parent / "mcp_servers.json"
 
+def build_agent(toolsets: list[BaseToolset] | None = None) -> Agent:
+    """直接登録したツール、またはMCP toolsetを使うADKエージェントを作る。"""
+    registered_tools: list[Callable[..., str] | BaseToolset]
+    if toolsets is None:
+        registered_tools = [
+            tools.search_glossary,
+            tools.get_lecture_summary,
+            tools.make_quiz,
+        ]
+    else:
+        registered_tools = list(toolsets)
+    return Agent(
+        name="aie2026_learning_agent",
+        description="AIE2026講座の用語と講義内容を案内する学習支援エージェント。",
+        model=MODEL,
+        instruction=INSTRUCTIONS,
+        tools=registered_tools,
+    )
 
-def load_mcp_servers(config_path: Path = MCP_CONFIG) -> list[MCPToolset]:
-    """設定ファイル（mcpServers 形式）を読み、サーバーごとに接続（MCPToolset）を作る。
 
-    - "command" があれば stdio：サーバーをサブプロセスとして起動する
-    - "url" があれば Streamable HTTP：起動済みのサーバーに接続する
-    ツール名には「サーバー名_」を付ける（例: glossary_search_glossary）。複数のサーバーに
-    同じ名前のツールがあっても区別できるようにするため。
+agent = build_agent()
+root_agent = agent
 
-    Pydantic AI には同じことをする load_mcp_toolsets() もある。ここで自分で組み立てているのは、
-    古い SDK で作られたサーバー（fetch など）につなぐとき、接続方式の自動判定（"auto"）が
-    警告を大量に出すため。"legacy" に固定すると新旧どちらのサーバーにも静かにつながる。
-    """
+
+def load_mcp_servers(config_path: Path = MCP_CONFIG) -> list[McpToolset]:
+    """MCP設定ファイルからADKのMCP toolsetを作る。"""
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))["mcpServers"]
     toolsets = []
     for name, spec in config.items():
         if "url" in spec:
-            transport = spec["url"]
+            connection = StreamableHTTPConnectionParams(url=spec["url"])
         else:
-            transport = StdioTransport(spec["command"], spec.get("args", []), env=spec.get("env"))
-        toolsets.append(MCPToolset(Client(transport, mode="legacy")).prefixed(name))
+            connection = StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=spec["command"],
+                    args=spec.get("args", []),
+                    env=spec.get("env"),
+                )
+            )
+        toolsets.append(McpToolset(connection_params=connection, tool_name_prefix=name))
     return toolsets
 
 
 def build_mcp_agent(config_path: Path = MCP_CONFIG) -> Agent:
-    """第5回: 関数を直接登録する代わりに、MCP サーバーが公開するツールを使うエージェント。INSTRUCTIONS は同じ。"""
-    return Agent(instructions=INSTRUCTIONS, toolsets=load_mcp_servers(config_path))
+    """MCPサーバーからツールを受け取るADKエージェントを作る。"""
+    return build_agent(load_mcp_servers(config_path))
 
 
-def build_model() -> GoogleModel:
-    return GoogleModel(MODEL, provider=GoogleProvider(api_key=get_api_key()))
+async def _close_toolsets(target: Agent) -> None:
+    for tool in target.tools:
+        if isinstance(tool, BaseToolset):
+            await tool.close()
 
 
-def print_tools(target: Agent) -> None:
-    """モデルに見えているツールの一覧（名前・説明文・引数）を表示する。LLM は呼ばない。
+def _print_tool(tool: object) -> None:
+    name = getattr(tool, "name", getattr(tool, "__name__", type(tool).__name__))
+    description = getattr(tool, "description", None) or inspect.getdoc(tool) or ""
+    print(f"\n[{name}]")
+    print("  " + inspect.cleandoc(description).replace("\n", "\n  "))
+    if callable(tool):
+        print(f"  引数: {inspect.signature(tool)}")
+    else:
+        get_declaration = getattr(tool, "_get_declaration", None)
+        if get_declaration:
+            declaration = get_declaration()
+            parameters = declaration.parameters_json_schema or declaration.parameters
+            if parameters:
+                if hasattr(parameters, "model_dump"):
+                    parameters = parameters.model_dump(exclude_none=True)
+                print(f"  引数: {json.dumps(parameters, ensure_ascii=False)}")
 
-    TestModel（テストで使う偽モデル）にツール一覧を渡し、そこから読み出す。
-    MCP サーバーのツールも、第3回の関数ツールも、モデルから見れば同じ形をしている。
-    """
-    model = TestModel(call_tools=[])
-    target.run_sync("ツール一覧", model=model)
-    tools_seen = model.last_model_request_parameters.function_tools
-    print(f"モデルに見えているツール: {len(tools_seen)} 個")
-    for tool in tools_seen:
-        print(f"\n[{tool.name}]")
-        print("  " + inspect.cleandoc(tool.description or "").replace("\n", "\n  "))
-        params = tool.parameters_json_schema.get("properties", {})
-        print(f"  引数: {json.dumps(params, ensure_ascii=False)}")
+
+async def print_tools(target: Agent) -> None:
+    """エージェントに登録された関数ツールとMCPツールを表示する。"""
+    count = 0
+    try:
+        for tool in target.tools:
+            if isinstance(tool, BaseToolset):
+                for mcp_tool in await tool.get_tools_with_prefix():
+                    _print_tool(mcp_tool)
+                    count += 1
+            else:
+                _print_tool(tool)
+                count += 1
+    finally:
+        await _close_toolsets(target)
+    print(f"\nモデルに見えているツール: {count} 個")
 
 
-def print_trace(result) -> None:
-    """どのツールが、どの引数で呼ばれ、何を返したかを表示する。"""
+async def run_agent(target: Agent, question: str) -> list[Event]:
+    """ADK Runnerで質問を実行し、生成されたイベントを返す。"""
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(app_name=APP_NAME, user_id=USER_ID)
+    runner = Runner(
+        agent=target,
+        app_name=APP_NAME,
+        session_service=session_service,
+    )
+    return [
+        event
+        async for event in runner.run_async(
+            user_id=USER_ID,
+            session_id=session.id,
+            new_message=types.Content(
+                role="user",
+                parts=[types.Part(text=question)],
+            ),
+        )
+    ]
+
+
+def print_trace(events: list[Event]) -> None:
+    """ADKイベントからツール呼び出しと使用量を表示する。"""
     print("\n--- trace ---")
-    for message in result.all_messages():
-        for part in message.parts:
-            if isinstance(part, ToolCallPart):
-                print(f"[tool call]   {part.tool_name}({part.args})")
-            elif isinstance(part, ToolReturnPart):
-                print(f"[tool return] {part.tool_name} -> {str(part.content)[:120]}…")
-    print(f"[usage] {result.usage}")
+    for event in events:
+        if not event.content:
+            continue
+        for part in event.content.parts:
+            if part.function_call:
+                call = part.function_call
+                print(f"[tool call]   {call.name}({json.dumps(call.args, ensure_ascii=False)})")
+            elif part.function_response:
+                response = part.function_response
+                print(f"[tool return] {response.name} -> {str(response.response)[:120]}…")
+    usage = [
+        event.usage_metadata.model_dump(exclude_none=True)
+        for event in events
+        if event.usage_metadata
+    ]
+    if usage:
+        print(f"[usage] {json.dumps(usage, ensure_ascii=False)}")
+
+
+def _answer(events: list[Event]) -> str:
+    final_event = next(
+        (event for event in reversed(events) if event.is_final_response()),
+        None,
+    )
+    if final_event is None:
+        raise RuntimeError("ADKから最終回答が返りませんでした。")
+    if final_event.error_code:
+        raise RuntimeError(f"ADKエラー: {final_event.error_code}: {final_event.error_message}")
+    if final_event.content is None:
+        raise RuntimeError("ADKの最終イベントに回答コンテンツがありません。")
+    answer = "".join(part.text or "" for part in final_event.content.parts)
+    if not answer:
+        raise RuntimeError("ADKの最終イベントにテキスト回答がありません。")
+    return answer
+
+
+async def _run_cli(target: Agent, question: str, trace: bool) -> None:
+    try:
+        events = await run_agent(target, question)
+        print(_answer(events))
+        if trace:
+            print_trace(events)
+    except (ClientError, ServerError) as error:
+        print(api_error_message(error.code, str(error)))
+        raise SystemExit(1) from error
+    finally:
+        await _close_toolsets(target)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="学習支援エージェントに質問する")
+    parser = argparse.ArgumentParser(description="Google ADKで学習支援エージェントに質問する")
     parser.add_argument("question", nargs="?")
     parser.add_argument("--trace", action="store_true", help="ツール呼び出しを表示する")
-    parser.add_argument("--mcp", action="store_true", help="第5回: ツールを MCP サーバー（app/mcp_servers.json）から受け取る")
-    parser.add_argument("--list-tools", action="store_true", help="モデルに見えるツール一覧を表示して終了する（APIキー不要）")
+    parser.add_argument("--mcp", action="store_true", help="ツールをMCPサーバーから受け取る")
+    parser.add_argument("--list-tools", action="store_true", help="モデルに見えるツール一覧を表示する")
     args = parser.parse_args()
+    print(1004)
 
     target = build_mcp_agent() if args.mcp else agent
     if args.list_tools:
-        print_tools(target)
+        asyncio.run(print_tools(target))
         return
     if not args.question:
         parser.error("質問を指定してください")
 
+    os.environ["GOOGLE_API_KEY"] = get_api_key()
     print(f"[model] {MODEL}")
     if args.mcp:
-        print("[tools] MCP サーバー（app/mcp_servers.json）")
-    try:
-        result = target.run_sync(args.question, model=build_model())
-    except ModelHTTPError as e:
-        print(api_error_message(e.status_code, str(e.body)[:200]))
-        raise SystemExit(1)
-    print(result.output)
-    if args.trace:
-        print_trace(result)
+        print(f"[tools] MCPサーバー（{MCP_CONFIG}）")
+    asyncio.run(_run_cli(target, args.question, args.trace))
 
 
 if __name__ == "__main__":

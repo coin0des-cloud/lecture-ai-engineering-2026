@@ -41,7 +41,7 @@ app/
   config.py      モデル名とAPIキーの読み込み
   ask.py         第1回：LLMに質問する
   tools.py       第3回：エージェントのツール（用語集の検索など）
-  agent.py       第3回：Pydantic AI の学習支援エージェント（第5回：--mcp で MCP 経由）
+  agent.py       第3回：Google ADK の学習支援エージェント（第5回：--mcp で MCP 経由）
   mcp_server.py  第5回：用語集を公開する MCP サーバー
   mcp_servers.json 第5回：使う MCP サーバーの設定（mcpServers 形式）
 data/
@@ -66,12 +66,12 @@ pyproject.toml / uv.lock  依存パッケージとその固定版
 
 ## 前提と制約
 
-- **依存パッケージの版は固定**しています（`uv.lock`。Python 3.12、pydantic-ai-slim 2.57.0、google-genai 2.31.0）。講座の期間中は上げません。`uv sync --frozen` でそのまま入れてください。
+- **依存パッケージの版は固定**しています（`uv.lock`。Python 3.12、Google ADK 2.14.0、google-genai 2.31.0）。講座の期間中は上げません。`uv sync --frozen` でそのまま入れてください。
 - **既定のモデルは `gemini-3.5-flash-lite`** です。環境変数 `AIE_MODEL` で切り替えられます（下の「モデルの切り替え」）。ほかのモデルや自前契約の API を使ってもかまいません
 - **Gemini API の無料枠にはレート制限**があります。エージェント（第3回以降）は 1 つの質問で LLM を複数回呼ぶので、第1回より早く上限に達します。`レート制限に達しました` と出たら 1 分ほど待ってください。`モデルが混み合っています（503）` が続くときは `AIE_MODEL=gemini-3.1-flash-lite` を試してください
 - **API キーは環境変数 `GEMINI_API_KEY` だけ**で渡します。コード・コミット・チャットに貼らないでください。漏れたら AI Studio で削除して作り直します
 - Codespaces からインターネットへは出られますが、外から Codespaces の中へは接続できません（ポート転送は既定で非公開）。第5回の MCP サーバーは Codespaces の中で動かします
-- テスト（`uv run pytest -q`）は API キーなしで動きます（LLM を呼ばない TestModel を使用）
+- テスト（`uv run pytest -q`）は API キーなしで動きます（テスト用モデルを使用し、Gemini API は呼びません）
 
 ## 守ってほしいこと
 

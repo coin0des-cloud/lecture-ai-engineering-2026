@@ -8,17 +8,17 @@
 Copilot Chat）がサブプロセスとして起動する使い方なので、手で実行すると入力待ちのまま止まって見える。
 
 第3回では tools.py の関数を agent.py に直接登録した。MCP サーバーにすると、同じ関数を
-Pydantic AI 以外のクライアント（Copilot Chat など）からも、共通の手順で使えるようになる。
+ADK や Copilot Chat など、異なる MCP クライアントからも共通の手順で使えるようになる。
 """
 
 import argparse
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server import FastMCP
 
 from app import tools
 
 # サーバーの名前と説明。クライアントに表示される（設定ファイル側のキー "glossary" とは別物）
-server = MCPServer(
+server = FastMCP(
     "aie2026-glossary",
     instructions="AIE2026（AIエンジニアリング実践講座）の用語集と各回の要点を提供する。",
 )

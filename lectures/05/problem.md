@@ -47,7 +47,7 @@ uv run python -m app.agent --mcp --list-tools    # 第5回：MCP サーバーか
 uv run python -m app.agent --mcp --trace "AIE2026の講座の宿題にある「3レベル」とは何ですか？"
 ```
 
-第3回（`--mcp` なし）と比べて、回答・ツール名・`requests` の回数がどう違うかを見ます。
+第3回（`--mcp` なし）と比べて、回答・ツール名・`[usage]` に表示されるトークン使用量がどう違うかを見ます。
 内部では、`app/agent.py` の `build_mcp_agent()` が設定ファイルを読み、サーバーを起動して、ツールをエージェントに渡しています。
 
 ### 3. ツールを1つ公開する
@@ -100,7 +100,7 @@ uv run python -m app.agent --mcp --trace "https://modelcontextprotocol.io/ の�
 | レベル | 内容 |
 |---|---|
 | 基礎 | サーバーを `uv run python -m app.mcp_server --http` で起動し、設定ファイルの `glossary` を `{"url": "http://127.0.0.1:8000/mcp"}` に替えて同じ質問をする。stdio と Streamable HTTP で、起動の仕方・プロセス・ポートがどう違うかを記録する。あわせて、ツールの docstring を書き換えると `--list-tools` と呼ばれ方がどう変わるかを比べる |
-| 実装 | 第3回の `make_quiz`（なければ新しいツール）を MCP サーバーに追加し、TestModel を使ったテストを `tests/test_mcp_server.py` に足す。引数の範囲チェック（例：存在しない回なら分かりやすいメッセージを返す）を入れ、MCP 越しのエラーがモデルにどう見えるかを `--trace` で確かめる |
+| 実装 | 第3回の `make_quiz`（なければ新しいツール）を MCP サーバーに追加し、API を呼ばないテストを足す。引数の範囲チェック（例：存在しない回なら分かりやすいメッセージを返す）を入れ、MCP 越しの結果を `--trace` で確かめる |
 | 発展 | 同じ用語集サーバーを **Copilot Chat**（VS Code の MCP クライアント）から使う（下の手順）。「サーバーを1つ作れば、クライアントを選ばずに使える」ことを確かめ、エージェント（`app/agent.py`）からの使い方と比べる。ツールが呼ばれるまでの流れ（誰がサーバーを起動するか、呼び出し前に人の承認があるか、結果がどう見えるか）の違いを記録する |
 
 ### 発展の進め方
@@ -137,7 +137,7 @@ Copilot Chat は VS Code の MCP クライアントです。リポジトリに `
 ## 参考
 
 - MCP の公式サイト: https://modelcontextprotocol.io/
-- Pydantic AI の MCP クライアント: https://pydantic.dev/docs/ai/mcp/client/
+- Google ADK の MCP クライアント: https://google.github.io/adk-docs/tools-custom/mcp-tools/
 - MCP の Python SDK（サーバーの書き方）: https://github.com/modelcontextprotocol/python-sdk
 - 公開されている MCP サーバー: https://github.com/modelcontextprotocol/servers
 - VS Code で MCP サーバーを使う: https://code.visualstudio.com/docs/copilot/customization/mcp-servers
